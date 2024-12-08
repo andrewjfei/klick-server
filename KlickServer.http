@@ -1,0 +1,6 @@
+@KlickServer_HostAddress = http://localhost:5038
+
+GET {{KlickServer_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
