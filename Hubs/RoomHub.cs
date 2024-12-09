@@ -1,15 +1,19 @@
-using Microsoft.AspNetCore.SignalR;
 using System.Collections.Concurrent;
+using Microsoft.AspNetCore.SignalR;
+using KlickServer.Models;
 
 namespace KlickServer.Hubs
 {
-    public class RoomHub: Hub
+    public class RoomHub : Hub
     {
         // HashSet to store rooms.
-        private static readonly HashSet<string> Rooms = []; 
+        private static readonly ConcurrentDictionary<string, List<Team>> Rooms = [];
 
         // Dictionary to map user connection ids to user information.
-        private static readonly ConcurrentDictionary<string, (string roomCode, string? name)> Users = new();
+        private static readonly ConcurrentDictionary<
+            string,
+            (string roomCode, string? name)
+        > Users = new();
 
         public async Task<string> CreateRoom()
         {
@@ -17,7 +21,7 @@ namespace KlickServer.Hubs
             string roomCode = Guid.NewGuid().ToString()[..6].ToUpper();
 
             // Attempt to add the new room code to the rooms HashSet.
-            if (Rooms.Add(roomCode))
+            if (Rooms.TryAdd(roomCode, []))
             {
                 Console.WriteLine($"Room {roomCode} created");
 
@@ -27,7 +31,7 @@ namespace KlickServer.Hubs
                 // Add user to room group.
                 await Groups.AddToGroupAsync(Context.ConnectionId, roomCode);
             }
-            else 
+            else
             {
                 Console.WriteLine($"Error: Room {roomCode} already exists");
             }
@@ -35,10 +39,32 @@ namespace KlickServer.Hubs
             return roomCode;
         }
 
+        public async Task<string?> AddTeam(string teamName)
+        {
+            return await Task.Run(() =>
+            {
+                if (Users.TryGetValue(Context.ConnectionId, out var user))
+                {
+                    if (Rooms.TryGetValue(user.roomCode, out var teams))
+                    {
+                        Team team = new(teamName);
+
+                        teams.Add(team);
+
+                        Console.WriteLine($"Added team {teamName} to room {user.roomCode}");
+
+                        return team.Id.ToString();
+                    }
+                }
+
+                return null;
+            });
+        }
+
         public async Task<bool> JoinRoom(string roomCode)
         {
             // Validate if room code exists.
-            if (!Rooms.Contains(roomCode))
+            if (!Rooms.ContainsKey(roomCode))
             {
                 Console.WriteLine($"Room {roomCode} does not exist");
                 return false;
@@ -59,10 +85,9 @@ namespace KlickServer.Hubs
             {
                 // Update user room name.
                 Users[Context.ConnectionId] = (user.roomCode, name);
-                
+
                 // Notify other users in the room that a new user has joined.
-                await Clients.Group(user.roomCode)
-                    .SendAsync("RecieveMessage", $"{name} has joined the room.");
+                await Clients.Group(user.roomCode).SendAsync("JoinedRoom", Context.ConnectionId, name);
             }
         }
 
@@ -72,9 +97,8 @@ namespace KlickServer.Hubs
             {
                 if (user.name != null)
                 {
-                    // notify other users in the room that the user has left
-                    await Clients.Group(user.roomCode)
-                        .SendAsync("RecieveMessage", $"{user.name} has left the room.");
+                    // Notify other users in the room that the user has left.
+                    await Clients.Group(user.roomCode).SendAsync("LeftRoom", Context.ConnectionId, user.name);
                 }
             }
 
