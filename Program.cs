@@ -13,7 +13,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // redirect http requests to https
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 // route requests to correct route handler
 app.UseRouting();
