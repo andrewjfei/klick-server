@@ -4,7 +4,7 @@ namespace KlickServer.Models
     {
         private readonly Guid _id;
         private readonly string _name;
-        private readonly int _score;
+        private int _score;
 
         public Team(string name)
         {
@@ -26,6 +26,13 @@ namespace KlickServer.Models
         public int Score
         {
             get { return _score; }
+        }
+
+        public int AddScore(int score)
+        {
+            _score += score;
+
+            return _score;
         }
     }
 }

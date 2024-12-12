@@ -7,7 +7,7 @@ namespace KlickServer.Hubs
     public class RoomHub : Hub
     {
         // HashSet to store rooms.
-        private static readonly ConcurrentDictionary<string, List<Team>> Rooms = [];
+        private static readonly ConcurrentDictionary<string, (List<string>, List<Team>)> Rooms = [];
 
         // Dictionary to map user connection ids to user information.
         private static readonly ConcurrentDictionary<
@@ -21,7 +21,7 @@ namespace KlickServer.Hubs
             string roomCode = Guid.NewGuid().ToString()[..6].ToUpper();
 
             // Attempt to add the new room code to the rooms HashSet.
-            if (Rooms.TryAdd(roomCode, []))
+            if (Rooms.TryAdd(roomCode, ([], [])))
             {
                 Console.WriteLine($"Room {roomCode} created");
 
@@ -39,14 +39,38 @@ namespace KlickServer.Hubs
             return roomCode;
         }
 
+        public async Task<string?> AddCriterion(string criterion)
+        {
+            return await Task.Run(() =>
+            {
+                if (Users.TryGetValue(Context.ConnectionId, out var user))
+                {
+                    if (Rooms.TryGetValue(user.roomCode, out var roomData))
+                    {
+                        List<string> criteria = roomData.Item1;
+
+                        criteria.Add(criterion);
+
+                        Console.WriteLine($"Added criterion {criterion} to room {user.roomCode}.");
+
+                        return criterion;
+                    }
+                }
+
+                return null;
+            });
+        }
+
         public async Task<string?> AddTeam(string teamName)
         {
             return await Task.Run(() =>
             {
                 if (Users.TryGetValue(Context.ConnectionId, out var user))
                 {
-                    if (Rooms.TryGetValue(user.roomCode, out var teams))
+                    if (Rooms.TryGetValue(user.roomCode, out var roomData))
                     {
+                        List<Team> teams = roomData.Item2;
+
                         Team team = new(teamName);
 
                         teams.Add(team);
@@ -59,6 +83,32 @@ namespace KlickServer.Hubs
 
                 return null;
             });
+        }
+
+        public async Task StartScoring(string teamId) 
+        {
+            if (Users.TryGetValue(Context.ConnectionId, out var user))
+            {
+                if (Rooms.TryGetValue(user.roomCode, out var roomData))
+                {
+                    List<string> criteria = roomData.Item1;
+                    List<Team> teams = roomData.Item2;
+
+                    if (teams.Any((team) => team.Id.ToString() == teamId))
+                    {
+                        Team? team = teams.Find((team) => team.Id.ToString() == teamId);
+
+                        if (team != null) {
+                            Console.WriteLine($"Start scoring for team {team.Name}");
+
+                            // Notify users in the room to start scoring.
+                            await Clients.Group(user.roomCode).SendAsync("StartScoring", criteria, team.Id, team.Name);
+                        } else {
+                            Console.WriteLine($"Team with id {teamId} does not exist.");
+                        }
+                    }
+                }
+            }
         }
 
         public async Task<bool> JoinRoom(string roomCode)
@@ -91,7 +141,35 @@ namespace KlickServer.Hubs
             }
         }
 
-        public override async Task OnDisconnectedAsync(System.Exception? exception)
+        public async Task GiveScore(string teamId, int score)
+        {
+            if (Users.TryGetValue(Context.ConnectionId, out var user))
+            {
+                if (Rooms.TryGetValue(user.roomCode, out var roomData))
+                {
+
+                    List<Team> teams = roomData.Item2;
+                    
+                    if (teams.Any((team) => team.Id.ToString() == teamId))
+                    {
+                        Team? team = teams.Find((team) => team.Id.ToString() == teamId);
+
+                        if (team != null) {
+                            team.AddScore(score);
+
+                            Console.WriteLine($"{user.name} gave a score of {score} for team {team.Name}.");
+
+                            // Notify host that the team score has been updated.
+                            await Clients.Group(user.roomCode).SendAsync("UpdateScore", Context.ConnectionId, team.Id, team.Score);
+                        } else {
+                            Console.WriteLine($"Team with id {teamId} does not exist.");
+                        }
+                    }
+                }
+            }
+        }
+
+        public override async Task OnDisconnectedAsync(Exception? exception)
         {
             if (Users.TryRemove(Context.ConnectionId, out var user))
             {
