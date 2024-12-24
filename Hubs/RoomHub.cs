@@ -168,6 +168,15 @@ namespace KlickServer.Hubs
                 }
             }
         }
+        
+        public async Task SendMessage(string message)
+        {
+            if (Users.TryGetValue(Context.ConnectionId, out var user))
+            {
+                // Notify host that there is a user has sent a message.
+                await Clients.Group(user.roomCode).SendAsync("Message", Context.ConnectionId, message);
+            }
+        }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
